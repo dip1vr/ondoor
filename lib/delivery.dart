@@ -37,7 +37,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ProfileScreen(),
     ];
 
-    // 🔹 Firestore se online status load karlo (refresh ke baad bhi same रहे)
+    // 🔹 Firestore se online status load karlo (refresh ke baad bhi same rahe)
     _firestore.collection("deliveryBoys").doc(_uid).get().then((doc) {
       if (doc.exists && doc["isOnline"] == true) {
         setState(() => _isOnline = true);
@@ -107,12 +107,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           active += 1;
         }
       }
-        _firestore.collection("deliveryBoys").doc(_uid).set({
-      "earnings": earnings,
-      "activeOrders": active,
-      "completedOrders": completed,
-      "lastUpdated": FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+      _firestore.collection("deliveryBoys").doc(_uid).set({
+        "earnings": earnings,
+        "activeOrders": active,
+        "completedOrders": completed,
+        "lastUpdated": FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       return {
         "earnings": earnings,
@@ -142,58 +142,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showOrderDialog(String orderId, Map<String, dynamic> order) {
     if (!_isOnline) return;
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text("New Order"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Customer: ${order['customerName'] ?? 'N/A'}"),
-            Text("Address: ${order['address'] ?? 'N/A'}"),
-            Text("Total: ₹${order['total'] ?? 0}"),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              _firestore.collection('orders').doc(orderId).update({
-                'status': 'rejected'
-              });
-              Navigator.pop(context);
-            },
-            child: const Text("Reject", style: TextStyle(color: Colors.red)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final orderDoc = _firestore.collection('orders').doc(orderId);
-              await _firestore.runTransaction((transaction) async {
-                final snapshot = await transaction.get(orderDoc);
-                if (!snapshot.exists) throw Exception("Order no longer exists");
-
-                final data = snapshot.data()!;
-                if (data['status'] != 'pending') {
-                  throw Exception("Order already taken");
-                }
-
-                transaction.update(orderDoc, {
-                  'status': 'accepted',
-                  'deliveryBoyId': _uid,
-                });
-              }).then((_) {
-                Navigator.pop(context);
-              }).catchError((e) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text("Failed: ${e.toString()}")),
-                );
-              });
-            },
-            child: const Text("Accept"),
-          ),
-        ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _OrderBottomSheet(
+        order: order,
+        orderId: orderId,
+        uid: _uid,
+        firestore: _firestore,
       ),
     );
   }
@@ -540,6 +497,374 @@ class _DashboardScreenState extends State<DashboardScreen> {
             onTap: _onItemTapped,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _OrderBottomSheet extends StatefulWidget {
+  final Map<String, dynamic> order;
+  final String orderId;
+  final String uid;
+  final FirebaseFirestore firestore;
+
+  const _OrderBottomSheet({
+    required this.order,
+    required this.orderId,
+    required this.uid,
+    required this.firestore,
+  });
+
+  @override
+  _OrderBottomSheetState createState() => _OrderBottomSheetState();
+}
+
+class _OrderBottomSheetState extends State<_OrderBottomSheet> with TickerProviderStateMixin {
+  double _sliderValue = 0;
+  int _secondsRemaining = 60; // ⏱️ 1 minute
+  Timer? _timer;
+  late AnimationController _controller;
+  late Animation<double> _progressAnimation;
+  late AnimationController _sliderAnimationController;
+  late Animation<double> _sliderAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Start 60-second timer
+   _timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+  if (_secondsRemaining > 0) {
+    setState(() => _secondsRemaining--);
+  } else {
+    timer.cancel();
+
+    // 🔹 Agar order abhi bhi pending hai -> Firestore me expire kar do
+    final doc = await widget.firestore.collection('orders').doc(widget.orderId).get();
+    if (doc.exists) {
+      final data = doc.data() as Map<String, dynamic>;
+      if ((data['status'] ?? '').toLowerCase() == 'pending') {
+        await widget.firestore.collection('orders').doc(widget.orderId).update({
+          'status': 'expired',
+          'expiredAt': FieldValue.serverTimestamp(), // optional
+        });
+      }
+    }
+  }
+});
+
+
+    // Initialize progress animation (countdown circle)
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 60),
+    )..forward();
+    _progressAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.linear),
+    );
+
+    // Initialize slider animation controller
+    _sliderAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    _sliderAnimationController.addListener(() {
+      setState(() {
+        _sliderValue = _sliderAnimation.value;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    _sliderAnimationController.dispose();
+    super.dispose();
+  }
+
+  void _snapSlider(double value) {
+    if (value > 0.6) {
+      // Animate slider to 1.0 if past 60%
+      _sliderAnimation = Tween<double>(begin: value, end: 1.0).animate(
+        CurvedAnimation(parent: _sliderAnimationController, curve: Curves.easeOut),
+      );
+      _sliderAnimationController.forward(from: 0).then((_) async {
+        final orderDoc = widget.firestore.collection('orders').doc(widget.orderId);
+        await widget.firestore.runTransaction((transaction) async {
+          final snapshot = await transaction.get(orderDoc);
+          if (!snapshot.exists) throw Exception("Order no longer exists");
+
+          final data = snapshot.data()!;
+          if (data['status'] != 'pending') {
+            throw Exception("Order already taken");
+          }
+
+          transaction.update(orderDoc, {
+            'status': 'accepted',
+            'deliveryBoyId': widget.uid,
+          });
+        }).then((_) {
+          Navigator.pop(context);
+        }).catchError((e) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed: ${e.toString()}")),
+          );
+        });
+        _sliderAnimationController.reset();
+        setState(() {
+          _sliderValue = 0; // Reset slider value
+        });
+      });
+    } else {
+      // Animate slider back to 0.0 if below threshold
+      _sliderAnimation = Tween<double>(begin: value, end: 0.0).animate(
+        CurvedAnimation(parent: _sliderAnimationController, curve: Curves.easeOut),
+      );
+      _sliderAnimationController.forward(from: 0).then((_) {
+        _sliderAnimationController.reset();
+        setState(() {
+          _sliderValue = 0;
+        });
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: widget.firestore.collection('orders').doc(widget.orderId).snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+
+        final orderData = snapshot.data!.data() as Map<String, dynamic>;
+        final status = (orderData['status'] ?? '').toString().toLowerCase();
+        final acceptedBy = orderData['deliveryBoyId'];
+
+        // Order is missed if it's not pending and not assigned to this delivery boy
+        // OR if the timer has reached zero while still pending
+        final isMissed = (status != 'pending' && acceptedBy != widget.uid) ||
+                         (_secondsRemaining == 0 && status == 'pending');
+
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.blue.shade50, Colors.white],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Grabber Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 48,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2.5),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header with Timer and Close Button
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          isMissed ? "Order Closed" : "New Order",
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            // Show countdown timer if order is still open
+                            if (!isMissed)
+                              Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 32,
+                                    height: 32,
+                                    child: AnimatedBuilder(
+                                      animation: _progressAnimation,
+                                      builder: (context, child) => CircularProgressIndicator(
+                                        value: _progressAnimation.value,
+                                        strokeWidth: 3,
+                                        valueColor: AlwaysStoppedAnimation<Color>(
+                                            Colors.orange.shade600),
+                                        backgroundColor: Colors.grey.shade200,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    "$_secondsRemaining",
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.orange.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            const SizedBox(width: 12),
+                            IconButton(
+                              icon: Icon(Icons.close, color: Colors.grey.shade600, size: 28),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    // Order Details
+                    _buildDetailRow(
+                      icon: Icons.person,
+                      label: "Customer",
+                      value: orderData['customerName'] ?? 'N/A',
+                    ),
+                    const SizedBox(height: 16),
+                    _buildDetailRow(
+                      icon: Icons.location_on,
+                      label: "Address",
+                      value: orderData['address'] ?? 'N/A',
+                    ),
+                    const SizedBox(height: 16),
+                    _buildDetailRow(
+                      icon: Icons.currency_rupee,
+                      label: "Total",
+                      value: "₹${orderData['total'] ?? 0}",
+                    ),
+                    const SizedBox(height: 24),
+                    // Display "missed" UI or the accept slider
+                    if (isMissed)
+                      Center(
+                        child: Text(
+                          "❌ You missed this order",
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.red.shade600,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      )
+                    else
+                      Column(
+                        children: [
+                          _buildSliderAccept(),
+                          const SizedBox(height: 12),
+                          Center(
+                            child: Text(
+                              "Slide to Accept",
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 🔹 Accept Slider Widget
+  Widget _buildSliderAccept() {
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.green.shade100, Colors.green.shade200],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          trackHeight: 56,
+          thumbColor: Colors.green.shade600,
+          activeTrackColor: Colors.green.shade400,
+          inactiveTrackColor: Colors.transparent,
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 22),
+        ),
+        child: Slider(
+          value: _sliderValue,
+          min: 0,
+          max: 1,
+          onChanged: (value) => setState(() => _sliderValue = value),
+          onChangeEnd: _snapSlider,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 6,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.blueGrey.shade600, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

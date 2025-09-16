@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'map/map.dart';
+
 class LocationScreen extends StatefulWidget {
   final String orderId; // Order ID to fetch from Firestore
   const LocationScreen({super.key, required this.orderId});
@@ -353,16 +355,8 @@ class _LocationScreenState extends State<LocationScreen> {
                           color: Colors.grey[300],
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Center(
-                          child: Text(
-                            "Map Placeholder\n(Live location will be shown here)",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                        child: Center(
+                          child: GoogleMapPlacePicker(),
                         ),
                       ),
                     ),
