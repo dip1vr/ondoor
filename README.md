@@ -41,10 +41,14 @@ Profile Module – Delivery boy profile & settings
 Images-
 #Auth images 
 #login image- 
+
+
 <img width="250"  alt="image" src="https://github.com/user-attachments/assets/d5785205-5984-4d0b-94b4-9aa03207d826" />
 
 
 #Signup images- 
+
+
 <img width="250" alt="image" src="https://github.com/user-attachments/assets/51772499-4448-4ca3-a0bf-984e2dfb5a04" />
 
 
@@ -53,19 +57,27 @@ Images-
 
 
 #Earning screen-
+
+
 <img width="250" alt="image" src="https://github.com/user-attachments/assets/f6f2952a-6b28-4c58-b9f5-03d388ed4e37" />
 
 
 #Order History- 
+
+
 <img width="250" alt="image" src="https://github.com/user-attachments/assets/facc5535-db33-4097-ab06-1f6090c6e67c" />
 
 
 
 #Setting screen- 
+
+
 <img width="250" alt="image" src="https://github.com/user-attachments/assets/cb573316-7537-4ffc-a5d4-351f4c50e80a" />
 
 
 #Order status update screen- 
+
+
 <img width="250" alt="image" src="https://github.com/user-attachments/assets/200d254f-b089-46dd-9bb0-132443e375de" />
 
 
