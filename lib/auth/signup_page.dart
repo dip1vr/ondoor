@@ -5,11 +5,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../delivery.dart';
 
 class DeliverySignup extends StatefulWidget {
+  const DeliverySignup({super.key});
+
   @override
   _DeliverySignupState createState() => _DeliverySignupState();
 }
 
-class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProviderStateMixin {
+class _DeliverySignupState extends State<DeliverySignup>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<Color?> _color1;
   late Animation<Color?> _color2;
@@ -38,17 +41,20 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
   void initState() {
     super.initState();
 
-    _controller = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: 1000), // Adjusted for faster loading animation
-    )..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          setState(() {
-            index = (index + 1) % gradientColors.length;
-          });
-          _startAnimation();
-        }
-      });
+    _controller =
+        AnimationController(
+          vsync: this,
+          duration: Duration(
+            milliseconds: 1000,
+          ), // Adjusted for faster loading animation
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.completed) {
+            setState(() {
+              index = (index + 1) % gradientColors.length;
+            });
+            _startAnimation();
+          }
+        });
 
     _startAnimation();
   }
@@ -79,7 +85,11 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
     super.dispose();
   }
 
-  void _showStyledSnackBar(BuildContext context, String message, {bool isError = false}) {
+  void _showStyledSnackBar(
+    BuildContext context,
+    String message, {
+    bool isError = false,
+  }) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -88,9 +98,7 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
         ),
         backgroundColor: isError ? Colors.redAccent : Colors.green,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         duration: Duration(seconds: 3),
       ),
@@ -149,7 +157,7 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
               gradient: LinearGradient(
                 colors: [
                   _color1.value ?? Colors.purple,
-                  _color2.value ?? Colors.pink
+                  _color2.value ?? Colors.pink,
                 ],
                 begin: Alignment.bottomLeft,
                 end: Alignment.topRight,
@@ -161,7 +169,7 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
                 child: Container(
                   padding: const EdgeInsets.all(24.0),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.92),
+                    color: Colors.white.withValues(alpha: 0.92),
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
@@ -293,7 +301,10 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: _isLoading
-                                    ? [Colors.deepPurple.shade700, Colors.pink.shade700]
+                                    ? [
+                                        Colors.deepPurple.shade700,
+                                        Colors.pink.shade700,
+                                      ]
                                     : [Colors.deepPurple, Colors.pinkAccent],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
@@ -301,7 +312,9 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.deepPurple.withOpacity(_isLoading ? 0.3 : 0.5),
+                                  color: Colors.deepPurple.withValues(
+                                    alpha: _isLoading ? 0.3 : 0.5,
+                                  ),
                                   blurRadius: _isLoading ? 12 : 8,
                                   spreadRadius: _isLoading ? 2 : 0,
                                 ),
@@ -319,37 +332,61 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
                                             _isLoading = true;
                                           });
                                           try {
-                                            final credential = await FirebaseAuth.instance
+                                            final credential = await FirebaseAuth
+                                                .instance
                                                 .createUserWithEmailAndPassword(
-                                              email: emailController.text.trim(),
-                                              password: passwordController.text.trim(),
-                                            );
+                                                  email: emailController.text
+                                                      .trim(),
+                                                  password: passwordController
+                                                      .text
+                                                      .trim(),
+                                                );
 
                                             await credential.user
-                                                ?.updateDisplayName(nameController.text.trim());
+                                                ?.updateDisplayName(
+                                                  nameController.text.trim(),
+                                                );
 
-                                            _showStyledSnackBar(context, 'Sign up successful!');
+                                            _showStyledSnackBar(
+                                              context,
+                                              'Sign up successful!',
+                                            );
 
                                             Navigator.pushReplacement(
                                               context,
-                                              MaterialPageRoute(builder: (_) => DashboardScreen()),
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    DashboardScreen(),
+                                              ),
                                             );
                                           } on FirebaseAuthException catch (e) {
                                             String message = 'Signup failed';
-                                            if (e.code == 'email-already-in-use') {
+                                            if (e.code ==
+                                                'email-already-in-use') {
                                               message = 'Email already in use';
-                                            } else if (e.code == 'invalid-email') {
+                                            } else if (e.code ==
+                                                'invalid-email') {
                                               message = 'Invalid email';
-                                            } else if (e.code == 'weak-password') {
+                                            } else if (e.code ==
+                                                'weak-password') {
                                               message = 'Weak password';
-                                            } else if (e.code == 'operation-not-allowed') {
-                                              message = 'Email/password accounts are not enabled';
+                                            } else if (e.code ==
+                                                'operation-not-allowed') {
+                                              message =
+                                                  'Email/password accounts are not enabled';
                                             }
 
-                                            _showStyledSnackBar(context, message, isError: true);
+                                            _showStyledSnackBar(
+                                              context,
+                                              message,
+                                              isError: true,
+                                            );
                                           } catch (e) {
-                                            _showStyledSnackBar(context, 'Something went wrong: $e',
-                                                isError: true);
+                                            _showStyledSnackBar(
+                                              context,
+                                              'Something went wrong: $e',
+                                              isError: true,
+                                            );
                                           } finally {
                                             setState(() {
                                               _isLoading = false;
@@ -360,17 +397,21 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
                                 child: Center(
                                   child: AnimatedSwitcher(
                                     duration: const Duration(milliseconds: 300),
-                                    transitionBuilder: (child, animation) => FadeTransition(
-                                      opacity: animation,
-                                      child: ScaleTransition(
-                                        scale: animation.drive(Tween(begin: 0.8, end: 1.0)),
-                                        child: child,
-                                      ),
-                                    ),
+                                    transitionBuilder: (child, animation) =>
+                                        FadeTransition(
+                                          opacity: animation,
+                                          child: ScaleTransition(
+                                            scale: animation.drive(
+                                              Tween(begin: 0.8, end: 1.0),
+                                            ),
+                                            child: child,
+                                          ),
+                                        ),
                                     child: _isLoading
                                         ? Row(
                                             key: const ValueKey("loading"),
-                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
                                             children: [
                                               SizedBox(
                                                 width: 20,
@@ -379,7 +420,10 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
                                                   animation: _controller,
                                                   builder: (context, child) {
                                                     return Transform.rotate(
-                                                      angle: _controller.value * 2 * 3.14159,
+                                                      angle:
+                                                          _controller.value *
+                                                          2 *
+                                                          3.14159,
                                                       child: Icon(
                                                         Icons.autorenew,
                                                         size: 20,
@@ -393,8 +437,16 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
                                               ShaderMask(
                                                 shaderCallback: (bounds) {
                                                   return LinearGradient(
-                                                    colors: [Colors.white, Colors.white.withOpacity(0.5)],
-                                                    stops: [0.0, _controller.value],
+                                                    colors: [
+                                                      Colors.white,
+                                                      Colors.white.withValues(
+                                                        alpha: 0.5,
+                                                      ),
+                                                    ],
+                                                    stops: [
+                                                      0.0,
+                                                      _controller.value,
+                                                    ],
                                                     tileMode: TileMode.mirror,
                                                   ).createShader(bounds);
                                                 },
@@ -411,7 +463,8 @@ class _DeliverySignupState extends State<DeliverySignup> with SingleTickerProvid
                                           )
                                         : Row(
                                             key: const ValueKey("signUp"),
-                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
                                             children: [
                                               Icon(
                                                 Icons.person_add,

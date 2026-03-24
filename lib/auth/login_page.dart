@@ -1,124 +1,226 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hungry/pages/dashbord.dart'; // Assuming this is your dashboard page
+import 'package:ondoor/controllers/auth_controller.dart';
+import 'package:ondoor/theme/app_theme.dart';
+import 'package:ondoor/widgets/genz_card.dart';
+import 'package:ondoor/auth/signup_page.dart';
 
-class BottomNavController extends GetxController {
-  var selectedIndex = 0.obs;
-  var cartItemCount = 0.obs; // Dynamic cart item count for badge
-
-  void changeIndex(int index) {
-    selectedIndex.value = index;
-  }
-
-  void updateCartCount(int count) {
-    cartItemCount.value = count;
-  }
-}
-
-class BottomNavPage extends StatelessWidget {
-  BottomNavPage({super.key});
-
-  final BottomNavController controller = Get.put(BottomNavController());
-
-  final List<Widget> pages = [
-    const Dash(), // Menu/Home
-    const Center(child: Text("Orders", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600))),
-    const Center(child: Text("Cart", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600))),
-    const Center(child: Text("Profile", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600))),
-  ];
+class DeliveryLoginPage extends StatelessWidget {
+  const DeliveryLoginPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() {
-      return Scaffold(
-        body: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200), // Subtle fade transition
-          transitionBuilder: (child, animation) {
-            return FadeTransition(
-              opacity: animation,
-              child: child,
-            );
-          },
-          child: IndexedStack(
-            key: ValueKey<int>(controller.selectedIndex.value),
-            index: controller.selectedIndex.value,
-            children: pages,
-          ),
-        ),
-        bottomNavigationBar: SafeArea(
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFFFFF8E1), // Warm, creamy background for food app vibe
-              border: Border(
-                top: BorderSide(color: Color(0xFFE0E0E0), width: 0.5), // Thinner divider
-              ),
-            ),
-            child: BottomNavigationBar(
-              currentIndex: controller.selectedIndex.value,
-              onTap: controller.changeIndex,
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: Colors.transparent, // Transparent to use container color
-              selectedItemColor: const Color(0xFFD81B60), // Richer pink for selected items
-              unselectedItemColor: const Color(0xFF424242), // Darker grey for unselected
-              selectedLabelStyle: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
-              unselectedLabelStyle: const TextStyle(
-                fontWeight: FontWeight.w500,
-                fontSize: 13,
-              ),
-              showUnselectedLabels: true,
-              elevation: 0,
-              items: [
-                _buildNavItem(Icons.restaurant_menu_rounded, "Menu", controller.selectedIndex.value == 0, null),
-                _buildNavItem(Icons.receipt_rounded, "Orders", controller.selectedIndex.value == 1, null),
-                _buildNavItem(Icons.shopping_bag_rounded, "Cart", controller.selectedIndex.value == 2, controller.cartItemCount.value),
-                _buildNavItem(Icons.person_rounded, "Profile", controller.selectedIndex.value == 3, null),
-              ],
-            ),
-          ),
-        ),
-      );
-    });
-  }
+    final controller = Get.put(AuthController());
 
-  BottomNavigationBarItem _buildNavItem(IconData icon, String label, bool isSelected, int? badgeCount) {
-    return BottomNavigationBarItem(
-      icon: Stack(
-        alignment: Alignment.topRight,
+    return Scaffold(
+      backgroundColor: AppTheme.backgroundDark,
+      body: Stack(
         children: [
+          // Background Gradient (Optional, very subtle in pro theme)
           Container(
-            padding: const EdgeInsets.all(6),
-            child: Icon(
-              icon,
-              size: isSelected ? 30 : 26,
-              color: isSelected ? const Color(0xFFD81B60) : const Color(0xFF424242),
-            ),
-          ),
-          if (badgeCount != null && badgeCount > 0)
-            Positioned(
-              right: -3,
-              top: -3,
-              child: Container(
-                padding: const EdgeInsets.all(5),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFF3D00), // Bright red-orange badge for visibility
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  badgeCount.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppTheme.backgroundDark,
+                  Color(0xFF1E293B), // Slate 800
+                ],
               ),
             ),
+          ),
+
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Logo / Icon
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryBlue.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppTheme.primaryBlue, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primaryBlue.withOpacity(0.3),
+                          blurRadius: 30,
+                          spreadRadius: 5,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.delivery_dining,
+                      size: 50,
+                      color: AppTheme.primaryBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  Text(
+                    "Welcome Back",
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Sign in to continue delivering",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey[400], fontSize: 16),
+                  ),
+                  const SizedBox(height: 48),
+
+                  // Login Form
+                  GenZCard(
+                    color: AppTheme.cardDark,
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildTextField(
+                          controller.emailController,
+                          "Email Address",
+                          Icons.email_outlined,
+                          false,
+                        ),
+                        const SizedBox(height: 20),
+                        Obx(
+                          () => _buildTextField(
+                            controller.passwordController,
+                            "Password",
+                            Icons.lock_outline,
+                            !controller.isPasswordVisible.value,
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                controller.isPasswordVisible.value
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
+                                color: Colors.grey,
+                              ),
+                              onPressed: controller.togglePasswordVisibility,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+
+                        Obx(
+                          () => SizedBox(
+                            height: 56,
+                            child: ElevatedButton(
+                              onPressed: controller.isLoading.value
+                                  ? null
+                                  : controller.login,
+                              style:
+                                  ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primaryBlue,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    elevation: 0,
+                                    shadowColor: AppTheme.primaryBlue
+                                        .withOpacity(0.5),
+                                  ).copyWith(
+                                    elevation: MaterialStateProperty.all(8),
+                                  ),
+                              child: controller.isLoading.value
+                                  ? const SizedBox(
+                                      height: 24,
+                                      width: 24,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 3,
+                                      ),
+                                    )
+                                  : const Text(
+                                      "LOG IN",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        letterSpacing: 1.2,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "New here? ",
+                        style: TextStyle(color: Colors.grey[500]),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const DeliverySignup(),
+                            ),
+                          );
+                        },
+                        child: const Text(
+                          "Create Account",
+                          style: TextStyle(
+                            color: AppTheme.primaryBlue,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
-      label: label,
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String hint,
+    IconData icon,
+    bool obscure, {
+    Widget? suffixIcon,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.backgroundDark,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        style: const TextStyle(
+          fontWeight: FontWeight.w500,
+          color: Colors.white,
+        ),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.grey[600]),
+          prefixIcon: Icon(icon, color: Colors.grey[500]),
+          suffixIcon: suffixIcon,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 18,
+          ),
+        ),
+      ),
     );
   }
 }

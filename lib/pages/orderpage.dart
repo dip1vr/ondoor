@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart'; // Added for date formatting
+import 'package:intl/intl.dart';
+import 'package:ondoor/theme/app_theme.dart';
+import 'package:ondoor/widgets/genz_card.dart';
+import 'package:ondoor/widgets/shimmer_helper.dart';
 
 class OrdersHistoryScreen extends StatelessWidget {
   OrdersHistoryScreen({super.key});
@@ -11,109 +14,92 @@ class OrdersHistoryScreen extends StatelessWidget {
 
   String get _uid => _auth.currentUser!.uid;
 
-  /// 🔹 Fetch all orders for this delivery boy
   Stream<List<Map<String, dynamic>>> _getOrderHistory() {
     return _firestore
         .collection("orders")
         .where("deliveryBoyId", isEqualTo: _uid)
+        .where(
+          "status",
+          whereIn: ["delivered", "cancelled"],
+        ) // Show delivered and cancelled
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) {
-              final data = doc.data();
-              data["id"] = doc.id;
-              return data;
-            }).toList());
+        .map(
+          (snapshot) => snapshot.docs.map((doc) {
+            final data = doc.data();
+            data["id"] = doc.id;
+            return data;
+          }).toList(),
+        );
   }
 
-  /// 🔹 Fetch stats (completed orders only)
   Stream<Map<String, dynamic>> _getStats() {
-    return _firestore.collection("deliveryBoys").doc(_uid).snapshots().map(
-      (snapshot) {
-        if (!snapshot.exists) {
-          return {
-            "completedOrders": 0,
-          };
-        }
-        final data = snapshot.data()!;
-        return {
-          "completedOrders": data["completedOrders"] ?? 0,
-        };
-      },
-    );
-  }
-
-  /// 🔹 Get badge color based on order status
-  Color _statusColor(String status) {
-    switch (status.toLowerCase()) {
-      case "delivered":
-        return Colors.green.shade400;
-      case "cancelled":
-        return Colors.red.shade400;
-      default:
-        return Colors.grey.shade400;
-    }
-  }
-
-  /// 🔹 Safely parse numbers
-  double _parseDouble(dynamic value) {
-    if (value == null) return 0.0;
-    if (value is double) return value;
-    if (value is int) return value.toDouble();
-    return double.tryParse(value.toString()) ?? 0.0;
+    return _firestore.collection("deliveryBoys").doc(_uid).snapshots().map((
+      snapshot,
+    ) {
+      if (!snapshot.exists) return {"completedOrders": 0};
+      final data = snapshot.data()!;
+      return {"completedOrders": data["completedOrders"] ?? 0};
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Colors.transparent,
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /// 🔹 Completed Orders Card
+            const SafeArea(bottom: false, child: SizedBox(height: 10)),
+            // Completed Orders Card
             StreamBuilder<Map<String, dynamic>>(
               stream: _getStats(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return ShimmerHelper.buildBasicShimmer(
+                    width: double.infinity,
+                    height: 180,
+                    radius: 20,
+                  );
                 }
-
-                final stats = snapshot.data ?? {
-                  "completedOrders": 0,
-                };
-
+                final stats = snapshot.data ?? {"completedOrders": 0};
                 final completedOrders = stats["completedOrders"];
-                final totalOrders = completedOrders; // ✅ सिर्फ completed count
 
-                return Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: Colors.green, width: 1.5),
-                  ),
-                  elevation: 4,
-                  shadowColor: Colors.grey.withOpacity(0.3),
+                return GenZCard(
+                  color: AppTheme.cardDark,
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(24.0),
                     child: Column(
                       children: [
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: const [
-                            Icon(Icons.check_circle,
-                                color: Colors.green, size: 28),
-                            SizedBox(width: 6),
+                            Icon(
+                              Icons.check_circle_outline,
+                              color: AppTheme.primaryBlue,
+                              size: 28,
+                            ),
+                            SizedBox(width: 8),
                             Text(
-                              "Completed Orders",
+                              "COMPLETED ORDERS",
                               style: TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w500),
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.5,
+                                color: Colors.grey,
+                              ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
                         Text(
-                          "$totalOrders",
+                          "$completedOrders",
                           style: const TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.bold),
+                            fontSize: 40,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
                       ],
                     ),
@@ -122,31 +108,26 @@ class OrdersHistoryScreen extends StatelessWidget {
               },
             ),
 
-            const SizedBox(height: 12),
-            const Divider(color: Colors.grey),
-            const Text(
+            const SizedBox(height: 32),
+            Text(
               "Delivery History",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
-            const Divider(color: Colors.grey),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
 
-            /// 🔹 Orders List (only delivered)
+            // Orders List
             Expanded(
               child: StreamBuilder<List<Map<String, dynamic>>>(
                 stream: _getOrderHistory(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    // Log the error for debugging
-                    debugPrint("Error fetching order history: ${snapshot.error}");
-                    return const Center(
-                      child: Text(
-                        "Error loading order history.",
-                        style: TextStyle(color: Colors.red, fontSize: 16),
-                      ),
+                    return ShimmerHelper.buildListShimmer(
+                      itemCount: 4,
+                      itemBuilder: (index) =>
+                          ShimmerHelper.buildEarningsHistoryShimmer(),
                     );
                   }
                   if (!snapshot.hasData || snapshot.data!.isEmpty) {
@@ -154,55 +135,36 @@ class OrdersHistoryScreen extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Image.asset(
-                            "lib/assets/order.png",
-                            fit: BoxFit.cover,
+                          Icon(
+                            Icons.inbox_outlined,
+                            size: 60,
+                            color: Colors.grey.withOpacity(0.3),
                           ),
                           const SizedBox(height: 20),
                           const Text(
-                            "No completed orders yet!",
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            "Delivered orders will appear here.",
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                            ),
+                            "No orders found",
+                            style: TextStyle(color: Colors.grey),
                           ),
                         ],
                       ),
                     );
                   }
 
-                  // ✅ सिर्फ delivered वाले orders filter करो
-                  var completedOrders = snapshot.data!
-                      .where((o) => o["status"]?.toLowerCase() == "delivered")
-                      .toList();
-
-                  if (completedOrders.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        "No completed orders yet!",
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    );
-                  }
+                  var historyOrders = snapshot.data!;
+                  // Show most recent first
+                  historyOrders.sort((a, b) {
+                    Timestamp? t1 = a["deliveredAt"];
+                    Timestamp? t2 = b["deliveredAt"];
+                    if (t1 == null || t2 == null) return 0;
+                    return t2.compareTo(t1);
+                  });
 
                   return ListView.separated(
                     physics: const BouncingScrollPhysics(),
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemCount: completedOrders.length,
+                    itemCount: historyOrders.length,
                     itemBuilder: (context, index) {
-                      var order = completedOrders[index];
+                      var order = historyOrders[index];
                       return _buildOrderCard(order);
                     },
                   );
@@ -215,98 +177,87 @@ class OrdersHistoryScreen extends StatelessWidget {
     );
   }
 
-  /// 🔹 Single order card
   Widget _buildOrderCard(Map<String, dynamic> order) {
-    final status = (order["status"] ?? "N/A").toString();
-    final statusColor = _statusColor(status);
-    final distance = _parseDouble(order["distance"]);
-    final amount = _parseDouble(order["total"]);
-
-    // Format timestamp similar to EarningsScreen
     String formattedDate = "N/A";
     try {
       if (order["deliveredAt"] is Timestamp) {
-        formattedDate = DateFormat("dd MMM yyyy, hh:mm a")
-            .format(order["deliveredAt"].toDate());
-      } else {
-        debugPrint("Invalid deliveredAt for order ${order["id"]}");
+        formattedDate = DateFormat(
+          "dd MMM, hh:mm a",
+        ).format(order["deliveredAt"].toDate());
       }
-    } catch (e) {
-      debugPrint("Error formatting deliveredAt for order ${order["id"]}: $e");
-    }
+    } catch (_) {}
 
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: statusColor, width: 1.2),
-      ),
-      elevation: 3,
+    String status = (order['status'] ?? 'unknown').toString();
+    Color statusColor = AppTheme.getStatusColor(status);
+
+    return GenZCard(
+      color: AppTheme.cardDark,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Name + Status
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   order["customerName"] ?? "Unknown",
                   style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      vertical: 4, horizontal: 12),
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(8),
+                    color: statusColor.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: statusColor.withOpacity(0.5)),
                   ),
                   child: Text(
                     status.toUpperCase(),
-                    style: const TextStyle(
-                        fontSize: 12, color: Colors.white),
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: statusColor,
+                    ),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              order["restaurantName"] ?? "",
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                Icon(Icons.location_on, size: 14, color: Colors.grey[400]),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    order["address"] ?? "",
-                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                    order["deliveryAddress"] ?? "",
+                    style: TextStyle(fontSize: 14, color: Colors.grey[400]),
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Divider(color: Colors.white.withOpacity(0.05)),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.navigation, size: 16),
-                    const SizedBox(width: 4),
-                    Text("$distance km"),
-                    const SizedBox(width: 12),
-                    const Icon(Icons.access_time, size: 16),
-                    const SizedBox(width: 4),
-                    Text(formattedDate), // Use formatted date instead of order["time"]
-                  ],
+                Text(
+                  "₹${(double.tryParse((order['totalAmount'] ?? 0).toString()) ?? 0.0).toStringAsFixed(1)}",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: Colors.white,
+                  ),
                 ),
                 Text(
-                  "₹$amount",
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                  formattedDate,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                 ),
               ],
             ),

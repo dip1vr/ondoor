@@ -1,0 +1,53 @@
+﻿-- Using cached Firebase SDK zip file
+-- Using cached extracted Firebase SDK
+cmake.exe : CMake 
+Error at E:/HUNGRY/on
+door/build/windows/x6
+4/extracted/firebase_
+cpp_sdk_windows/CMake
+Lists.txt:17 (cmake_m
+inimum_required):
+At line:1 char:1
++ & "C:\Program 
+Files\Microsoft 
+Visual Studio\18\Ente
+rprise\Common7\IDE 
+...
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (CMake E   
+ rror at ...imum_    
+required)::Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+  Compatibility with 
+CMake < 3.5 has been 
+removed from CMake.
+
+  Update the VERSION 
+argument <min> 
+value.  Or, use the 
+<min>...<max> syntax
+  to tell CMake that 
+the project requires 
+at least <min> but 
+has been updated
+  to work with 
+policies introduced 
+by <max> or earlier.
+
+  Or, add -DCMAKE_POL
+ICY_VERSION_MINIMUM=3
+.5 to try 
+configuring anyway.
+
+
+-- Configuring incomplete, errors occurred!

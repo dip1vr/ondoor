@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 
 import 'pages/earningpage.dart';
 import 'pages/locationpage.dart';
@@ -18,6 +19,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
   bool _isOnline = false;
+  Timestamp? _onlineAt;
 
   late final List<Widget> _widgetOptions;
   final _firestore = FirebaseFirestore.instance;
@@ -40,7 +42,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // 🔹 Firestore se online status load karlo (refresh ke baad bhi same rahe)
     _firestore.collection("deliveryBoys").doc(_uid).get().then((doc) {
       if (doc.exists && doc["isOnline"] == true) {
-        setState(() => _isOnline = true);
+        setState(() {
+          _isOnline = true;
+          _onlineAt = doc.data()?.containsKey('onlineAt') == true
+              ? doc['onlineAt'] as Timestamp
+              : Timestamp.now();
+        });
         _subscribeToOrders();
       }
     });
@@ -51,14 +58,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final newStatus = !_isOnline;
     setState(() => _isOnline = newStatus);
 
-    await _firestore.collection("deliveryBoys").doc(_uid).set({
-      "isOnline": newStatus,
-      "lastUpdated": FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
     if (newStatus) {
+      // 🔹 Set online time
+      final now = Timestamp.now();
+      setState(() => _onlineAt = now);
+
+      await _firestore.collection("deliveryBoys").doc(_uid).set({
+        "isOnline": newStatus,
+        "onlineAt": FieldValue.serverTimestamp(),
+        "lastUpdated": FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
       _subscribeToOrders();
     } else {
+      await _firestore.collection("deliveryBoys").doc(_uid).set({
+        "isOnline": newStatus,
+        "lastUpdated": FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
       _unsubscribeFromOrders();
     }
   }
@@ -70,13 +87,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .where('status', isEqualTo: 'pending')
         .snapshots()
         .listen((snapshot) {
-      for (var change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.added) {
-          var order = change.doc.data()!;
-          _showOrderDialog(change.doc.id, order);
-        }
-      }
-    });
+          for (var change in snapshot.docChanges) {
+            if (change.type == DocumentChangeType.added) {
+              var order = change.doc.data()!;
+
+              // 🔹 Skip orders created before we went online
+              if (_onlineAt != null && order['createdAt'] != null) {
+                final createdAt = order['createdAt'] as Timestamp;
+                // If created BEFORE I came online, skip it
+                if (createdAt.compareTo(_onlineAt!) < 0) {
+                  return;
+                }
+              }
+
+              // 🔹 Skip if already missed by this user
+              List<dynamic> missedBy = order['missedBy'] ?? [];
+              if (missedBy.contains(_uid)) {
+                return;
+              }
+
+              _showOrderDialog(change.doc.id, order);
+            }
+          }
+        });
   }
 
   void _unsubscribeFromOrders() {
@@ -91,35 +124,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .where("deliveryBoyId", isEqualTo: _uid)
         .snapshots()
         .map((snapshot) {
-      int active = 0;
-      int completed = 0;
-      int earnings = 0;
+          int active = 0;
+          int completed = 0;
+          int earnings = 0;
 
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final status = (data['status'] ?? '').toString().toLowerCase();
-        final total = data['total'] ?? 0;
+          for (var doc in snapshot.docs) {
+            final data = doc.data();
+            final status = (data['status'] ?? '').toString().toLowerCase();
+            final total = data['totalAmount'] ?? 0;
 
-        if (status == 'completed' || status == 'delivered') {
-          completed += 1;
-          earnings += (total as num).toInt();
-        } else if (status == 'accepted' || status == 'pickup' || status == 'picked up' || status == 'on the way') {
-          active += 1;
-        }
-      }
-      _firestore.collection("deliveryBoys").doc(_uid).set({
-        "earnings": earnings,
-        "activeOrders": active,
-        "completedOrders": completed,
-        "lastUpdated": FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+            if (status == 'completed' || status == 'delivered') {
+              completed += 1;
+              earnings += (total as num).toInt();
+            } else if (status == 'accepted' ||
+                status == 'pickup' ||
+                status == 'picked up' ||
+                status == 'on the way') {
+              active += 1;
+            }
+          }
+          _firestore.collection("deliveryBoys").doc(_uid).set({
+            "earnings": earnings,
+            "activeOrders": active,
+            "completedOrders": completed,
+            "lastUpdated": FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
 
-      return {
-        "earnings": earnings,
-        "active": active,
-        "completed": completed,
-      };
-    });
+          return {
+            "earnings": earnings,
+            "active": active,
+            "completed": completed,
+          };
+        });
   }
 
   /// 🔹 Active Orders Stream
@@ -127,15 +163,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return _firestore
         .collection("orders")
         .where("deliveryBoyId", isEqualTo: _uid)
-        .where("status", whereIn: ["accepted", "pickup", "picked up", "on the way"])
+        .where(
+          "status",
+          whereIn: ["accepted", "pickup", "picked up", "on the way"],
+        )
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        data['id'] = doc.id;
-        return data;
-      }).toList();
-    });
+          return snapshot.docs.map((doc) {
+            final data = doc.data();
+            data['id'] = doc.id;
+            return data;
+          }).toList();
+        });
   }
 
   /// 🔹 New order dialog
@@ -217,11 +256,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           StreamBuilder<Map<String, dynamic>>(
             stream: _getStats(),
             builder: (context, snapshot) {
-              var stats = snapshot.data ?? {
-                "earnings": 0,
-                "active": 0,
-                "completed": 0,
-              };
+              var stats =
+                  snapshot.data ?? {"earnings": 0, "active": 0, "completed": 0};
               return Row(
                 children: [
                   Expanded(
@@ -273,7 +309,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Image.asset("lib/assets/noorder_ass.png", fit: BoxFit.cover),
+                          Image.asset(
+                            "lib/assets/noorder_ass.png",
+                            fit: BoxFit.cover,
+                          ),
                           const SizedBox(height: 20),
                           const Text(
                             "No active orders yet!",
@@ -286,10 +325,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           const SizedBox(height: 8),
                           const Text(
                             "Relax! You will get orders soon.",
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                            ),
+                            style: TextStyle(fontSize: 14, color: Colors.grey),
                           ),
                         ],
                       ),
@@ -340,7 +376,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Text(
                     title,
                     style: const TextStyle(
-                        color: Colors.black87, fontWeight: FontWeight.w500),
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
@@ -348,7 +386,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Text(
                 value,
                 style: const TextStyle(
-                    color: Colors.black, fontWeight: FontWeight.bold),
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -402,24 +442,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Text(
                     order["customerName"] ?? "Unknown",
                     style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold),
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 12,
+                    ),
                     decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.7),
+                      color: statusColor.withValues(alpha: 0.7),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       order["status"] ?? "N/A",
-                      style: const TextStyle(fontSize: 12, color: Colors.black87),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black87,
+                      ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 4),
               Text(
-                order["restaurantName"] ?? "",
+                order["vendorId"] ?? "",
                 style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               const SizedBox(height: 8),
@@ -428,7 +476,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const Icon(Icons.location_on, size: 16, color: Colors.grey),
                   const SizedBox(width: 4),
                   Text(
-                    order["address"] ?? "",
+                    order["deliveryAddress"] ?? "",
                     style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                 ],
@@ -445,12 +493,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const SizedBox(width: 12),
                       const Icon(Icons.access_time, size: 16),
                       const SizedBox(width: 4),
-                      Text(order["time"] ?? "N/A"),
+                      Text(
+                        order['createdAt'] is Timestamp
+                            ? DateFormat('hh:mm a').format(
+                                (order['createdAt'] as Timestamp).toDate(),
+                              )
+                            : "N/A",
+                      ),
                     ],
                   ),
                   Text(
-                    "Total: ₹${order['total'] ?? 0}",
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    "Total: ₹${order['totalAmount'] ?? 0}",
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -485,11 +542,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             items: const <BottomNavigationBarItem>[
               BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
               BottomNavigationBarItem(
-                  icon: Icon(Icons.attach_money), label: 'Earnings'),
+                icon: Icon(Icons.attach_money),
+                label: 'Earnings',
+              ),
               BottomNavigationBarItem(
-                  icon: Icon(Icons.delivery_dining), label: 'Orders'),
+                icon: Icon(Icons.delivery_dining),
+                label: 'Orders',
+              ),
               BottomNavigationBarItem(
-                  icon: Icon(Icons.person), label: 'Profile'),
+                icon: Icon(Icons.person),
+                label: 'Profile',
+              ),
             ],
             currentIndex: _selectedIndex,
             selectedItemColor: Colors.blue,
@@ -519,7 +582,8 @@ class _OrderBottomSheet extends StatefulWidget {
   _OrderBottomSheetState createState() => _OrderBottomSheetState();
 }
 
-class _OrderBottomSheetState extends State<_OrderBottomSheet> with TickerProviderStateMixin {
+class _OrderBottomSheetState extends State<_OrderBottomSheet>
+    with TickerProviderStateMixin {
   double _sliderValue = 0;
   int _secondsRemaining = 60; // ⏱️ 1 minute
   Timer? _timer;
@@ -533,35 +597,40 @@ class _OrderBottomSheetState extends State<_OrderBottomSheet> with TickerProvide
     super.initState();
 
     // Start 60-second timer
-   _timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-  if (_secondsRemaining > 0) {
-    setState(() => _secondsRemaining--);
-  } else {
-    timer.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      if (_secondsRemaining > 0) {
+        setState(() => _secondsRemaining--);
+      } else {
+        timer.cancel();
 
-    // 🔹 Agar order abhi bhi pending hai -> Firestore me expire kar do
-    final doc = await widget.firestore.collection('orders').doc(widget.orderId).get();
-    if (doc.exists) {
-      final data = doc.data() as Map<String, dynamic>;
-      if ((data['status'] ?? '').toLowerCase() == 'pending') {
-        await widget.firestore.collection('orders').doc(widget.orderId).update({
-          'status': 'expired',
-          'expiredAt': FieldValue.serverTimestamp(), // optional
-        });
+        // 🔹 Agar order abhi bhi pending hai -> Firestore me expire kar do
+        final doc = await widget.firestore
+            .collection('orders')
+            .doc(widget.orderId)
+            .get();
+        if (doc.exists) {
+          final data = doc.data() as Map<String, dynamic>;
+          if ((data['status'] ?? '').toLowerCase() == 'pending') {
+            await widget.firestore
+                .collection('orders')
+                .doc(widget.orderId)
+                .update({
+                  'missedBy': FieldValue.arrayUnion([widget.uid]),
+                });
+          }
+        }
       }
-    }
-  }
-});
-
+    });
 
     // Initialize progress animation (countdown circle)
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 60),
     )..forward();
-    _progressAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.linear),
-    );
+    _progressAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.linear));
 
     // Initialize slider animation controller
     _sliderAnimationController = AnimationController(
@@ -588,31 +657,41 @@ class _OrderBottomSheetState extends State<_OrderBottomSheet> with TickerProvide
     if (value > 0.6) {
       // Animate slider to 1.0 if past 60%
       _sliderAnimation = Tween<double>(begin: value, end: 1.0).animate(
-        CurvedAnimation(parent: _sliderAnimationController, curve: Curves.easeOut),
+        CurvedAnimation(
+          parent: _sliderAnimationController,
+          curve: Curves.easeOut,
+        ),
       );
       _sliderAnimationController.forward(from: 0).then((_) async {
-        final orderDoc = widget.firestore.collection('orders').doc(widget.orderId);
-        await widget.firestore.runTransaction((transaction) async {
-          final snapshot = await transaction.get(orderDoc);
-          if (!snapshot.exists) throw Exception("Order no longer exists");
+        final orderDoc = widget.firestore
+            .collection('orders')
+            .doc(widget.orderId);
+        try {
+          await widget.firestore.runTransaction((transaction) async {
+            final snapshot = await transaction.get(orderDoc);
+            if (!snapshot.exists) throw Exception("Order no longer exists");
 
-          final data = snapshot.data()!;
-          if (data['status'] != 'pending') {
-            throw Exception("Order already taken");
-          }
+            final data = snapshot.data()!;
+            if (data['status'] != 'pending') {
+              throw Exception("Order already taken");
+            }
 
-          transaction.update(orderDoc, {
-            'status': 'accepted',
-            'deliveryBoyId': widget.uid,
+            transaction.update(orderDoc, {
+              'status': 'accepted',
+              'deliveryBoyId': widget.uid,
+            });
           });
-        }).then((_) {
+          if (!mounted) return;
           Navigator.pop(context);
-        }).catchError((e) {
+        } catch (e) {
+          if (!mounted) return;
           Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Failed: ${e.toString()}")),
-          );
-        });
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text("Failed: ${e.toString()}")));
+        }
+
+        if (!mounted) return;
         _sliderAnimationController.reset();
         setState(() {
           _sliderValue = 0; // Reset slider value
@@ -621,7 +700,10 @@ class _OrderBottomSheetState extends State<_OrderBottomSheet> with TickerProvide
     } else {
       // Animate slider back to 0.0 if below threshold
       _sliderAnimation = Tween<double>(begin: value, end: 0.0).animate(
-        CurvedAnimation(parent: _sliderAnimationController, curve: Curves.easeOut),
+        CurvedAnimation(
+          parent: _sliderAnimationController,
+          curve: Curves.easeOut,
+        ),
       );
       _sliderAnimationController.forward(from: 0).then((_) {
         _sliderAnimationController.reset();
@@ -635,7 +717,10 @@ class _OrderBottomSheetState extends State<_OrderBottomSheet> with TickerProvide
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
-      stream: widget.firestore.collection('orders').doc(widget.orderId).snapshots(),
+      stream: widget.firestore
+          .collection('orders')
+          .doc(widget.orderId)
+          .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox.shrink();
 
@@ -645,8 +730,9 @@ class _OrderBottomSheetState extends State<_OrderBottomSheet> with TickerProvide
 
         // Order is missed if it's not pending and not assigned to this delivery boy
         // OR if the timer has reached zero while still pending
-        final isMissed = (status != 'pending' && acceptedBy != widget.uid) ||
-                         (_secondsRemaining == 0 && status == 'pending');
+        final isMissed =
+            (status != 'pending' && acceptedBy != widget.uid) ||
+            (_secondsRemaining == 0 && status == 'pending');
 
         return Container(
           decoration: BoxDecoration(
@@ -699,13 +785,17 @@ class _OrderBottomSheetState extends State<_OrderBottomSheet> with TickerProvide
                                     height: 32,
                                     child: AnimatedBuilder(
                                       animation: _progressAnimation,
-                                      builder: (context, child) => CircularProgressIndicator(
-                                        value: _progressAnimation.value,
-                                        strokeWidth: 3,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                            Colors.orange.shade600),
-                                        backgroundColor: Colors.grey.shade200,
-                                      ),
+                                      builder: (context, child) =>
+                                          CircularProgressIndicator(
+                                            value: _progressAnimation.value,
+                                            strokeWidth: 3,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.orange.shade600,
+                                                ),
+                                            backgroundColor:
+                                                Colors.grey.shade200,
+                                          ),
                                     ),
                                   ),
                                   Text(
@@ -720,7 +810,11 @@ class _OrderBottomSheetState extends State<_OrderBottomSheet> with TickerProvide
                               ),
                             const SizedBox(width: 12),
                             IconButton(
-                              icon: Icon(Icons.close, color: Colors.grey.shade600, size: 28),
+                              icon: Icon(
+                                Icons.close,
+                                color: Colors.grey.shade600,
+                                size: 28,
+                              ),
                               onPressed: () => Navigator.pop(context),
                             ),
                           ],
@@ -738,13 +832,13 @@ class _OrderBottomSheetState extends State<_OrderBottomSheet> with TickerProvide
                     _buildDetailRow(
                       icon: Icons.location_on,
                       label: "Address",
-                      value: orderData['address'] ?? 'N/A',
+                      value: orderData['deliveryAddress'] ?? 'N/A',
                     ),
                     const SizedBox(height: 16),
                     _buildDetailRow(
                       icon: Icons.currency_rupee,
                       label: "Total",
-                      value: "₹${orderData['total'] ?? 0}",
+                      value: "₹${orderData['totalAmount'] ?? 0}",
                     ),
                     const SizedBox(height: 24),
                     // Display "missed" UI or the accept slider
